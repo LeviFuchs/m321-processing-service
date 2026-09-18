@@ -1,0 +1,161 @@
+asyncapi: 3.0.0
+info:
+  title: Order Processing Events (LOCAL PLACEHOLDER)
+  version: 1.0.0
+  description: >
+    THIS FILE IS NOT THE SOURCE OF TRUTH.
+
+    It is a local development copy, written from this repository (Levi /
+    Processing Service) because, at the time this file was created, no
+    shared-contracts repository and no `LEVI HANDOFF` section with concrete
+    exchange/queue/routing-key/schema names had been provided.
+
+    The authoritative contract is whatever Noah's Order Service /
+    the shared-contracts repository defines. Before relying on this file:
+      1. Replace it with the real shared AsyncAPI spec, or
+      2. Reconcile every name below (exchange, routing keys, queue, schema
+         fields) with the real contract, and update
+         src/main/resources/application.properties accordingly.
+
+    Do not invent further diverging names on top of this file.
+
+defaultContentType: application/json
+
+servers:
+  rabbitmq:
+    host: '{RABBITMQ_HOST}:{RABBITMQ_PORT}'
+    protocol: amqp
+    variables:
+      RABBITMQ_HOST:
+        default: localhost
+      RABBITMQ_PORT:
+        default: '5672'
+
+channels:
+  orderCreated:
+    address: order.created
+    description: Published by Noah's Order Service when a new order is accepted.
+    messages:
+      OrderCreated:
+        $ref: '#/components/messages/OrderCreated'
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: order.events
+          type: topic
+          durable: true
+
+  orderProcessed:
+    address: order.processed
+    description: Published by this Processing Service after an order was processed.
+    messages:
+      OrderProcessed:
+        $ref: '#/components/messages/OrderProcessed'
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: order.events
+          type: topic
+          durable: true
+
+operations:
+  receiveOrderCreated:
+    action: receive
+    channel:
+      $ref: '#/channels/orderCreated'
+    bindings:
+      amqp:
+        queue:
+          name: processing-service.order-created.queue
+          durable: true
+          exclusive: false
+          autoDelete: false
+
+  sendOrderProcessed:
+    action: send
+    channel:
+      $ref: '#/channels/orderProcessed'
+
+components:
+  messages:
+    OrderCreated:
+      name: OrderCreated
+      title: Order Created
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/OrderCreated'
+
+    OrderProcessed:
+      name: OrderProcessed
+      title: Order Processed
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/OrderProcessed'
+
+  schemas:
+    OrderCreated:
+      type: object
+      description: >
+        Tolerant Reader: consumers must ignore unknown additional fields
+        (e.g. a future customerReference) as long as the fields below stay
+        present and compatible.
+      required:
+        - eventId
+        - correlationId
+        - orderId
+        - product
+        - quantity
+        - createdAt
+        - eventVersion
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Unique id of this event, used for consumer-side idempotency.
+        correlationId:
+          type: string
+          description: Stable id for the whole order flow; carried through to OrderProcessed unchanged.
+        orderId:
+          type: string
+        product:
+          type: string
+        quantity:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        eventVersion:
+          type: string
+          example: "1.0"
+
+    OrderProcessed:
+      type: object
+      required:
+        - eventId
+        - correlationId
+        - orderId
+        - processedAt
+        - status
+        - eventVersion
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: New, unique id for this event (NOT the OrderCreated eventId).
+        correlationId:
+          type: string
+          description: Copied verbatim from the triggering OrderCreated event.
+        orderId:
+          type: string
+        processedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          example: PROCESSED
+        eventVersion:
+          type: string
+          example: "1.0"
