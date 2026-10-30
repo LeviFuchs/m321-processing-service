@@ -36,7 +36,30 @@ public class RabbitMQConfig {
 
     @Bean
     public Queue orderCreatedQueue(MessagingProperties props) {
-        return QueueBuilder.durable(props.orderCreatedQueue()).build();
+        return QueueBuilder.durable(props.orderCreatedQueue())
+                .deadLetterExchange(props.deadLetterExchange())
+                .deadLetterRoutingKey(props.orderCreatedDlq())
+                .build();
+    }
+
+    @Bean
+    public TopicExchange deadLetterExchange(MessagingProperties props) {
+        return new TopicExchange(props.deadLetterExchange(), true, false);
+    }
+
+    @Bean
+    public Queue orderCreatedDeadLetterQueue(MessagingProperties props) {
+        return QueueBuilder.durable(props.orderCreatedDlq()).build();
+    }
+
+    @Bean
+    public Binding orderCreatedDeadLetterBinding(
+            Queue orderCreatedDeadLetterQueue,
+            TopicExchange deadLetterExchange,
+            MessagingProperties props) {
+        return BindingBuilder.bind(orderCreatedDeadLetterQueue)
+                .to(deadLetterExchange)
+                .with(props.orderCreatedDlq());
     }
 
     @Bean

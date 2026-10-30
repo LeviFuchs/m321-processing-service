@@ -16,9 +16,9 @@ public record OrderProcessedEvent(
         @JsonProperty("orderId") String orderId,
         @JsonProperty("processedAt") Instant processedAt,
         @JsonProperty("status") String status,
-        @JsonProperty("eventVersion") String eventVersion
+        @JsonProperty("eventVersion") int eventVersion
 ) {
 
     public static final String STATUS_PROCESSED = "PROCESSED";
-    public static final String EVENT_VERSION = "1.0";
+    public static final int EVENT_VERSION = 1;
 }

@@ -2,12 +2,14 @@ package com.example.m321processingservice.service;
 
 import com.example.m321processingservice.config.ProcessingProperties;
 import com.example.m321processingservice.messaging.OrderProcessedPublisher;
+import com.example.m321processingservice.messaging.ProcessingOutboxRepository;
 import com.example.m321processingservice.model.OrderCreatedEvent;
 import com.example.m321processingservice.model.OrderProcessedEvent;
 import com.example.m321processingservice.observability.LoggingContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -22,40 +24,40 @@ public class OrderProcessingService {
 
     private static final Logger log = LoggerFactory.getLogger(OrderProcessingService.class);
 
-    private final IdempotencyStore idempotencyStore;
-    private final OrderProcessedPublisher publisher;
+    private final ProcessingInboxRepository inboxRepository;
+    private final ProcessingOutboxRepository outboxRepository;
     private final ProcessingProperties processingProperties;
 
-    public OrderProcessingService(IdempotencyStore idempotencyStore,
-                                   OrderProcessedPublisher publisher,
+    public OrderProcessingService(ProcessingInboxRepository inboxRepository,
+                                   ProcessingOutboxRepository outboxRepository,
                                    ProcessingProperties processingProperties) {
-        this.idempotencyStore = idempotencyStore;
-        this.publisher = publisher;
+        this.inboxRepository = inboxRepository;
+        this.outboxRepository = outboxRepository;
         this.processingProperties = processingProperties;
     }
 
+    @Transactional
     public void process(OrderCreatedEvent event) {
         LoggingContext.put(event.eventId(), event.correlationId(), event.orderId(),
                 processingProperties.serviceName());
         try {
-            // Marked as seen before validation/publish on purpose: this prevents two concurrent
-            // redeliveries of the same eventId from both processing it. Trade-off: if processing
-            // fails after this point, RabbitMQ's redelivery of the same eventId will now be
-            // treated as a duplicate and skipped rather than retried. A production-grade store
-            // would track a per-eventId status (e.g. PENDING/DONE) to allow retrying failures.
-            if (idempotencyStore.isDuplicate(event.eventId())) {
+            if (!inboxRepository.tryStart(event)) {
                 log.info("status=DUPLICATE_IGNORED message=\"Duplicate OrderCreated event ignored, no second OrderProcessed produced\"");
                 return;
             }
 
             log.info("status=RECEIVED message=\"Processing started\"");
             validate(event);
+            if (processingProperties.failProduct().equalsIgnoreCase(event.product())) {
+                throw new IllegalStateException("Intentional FAIL-DEMO error for retry/DLQ demonstration");
+            }
             simulateProcessingTime();
 
             OrderProcessedEvent processedEvent = toOrderProcessedEvent(event);
-            publisher.publish(processedEvent);
+            outboxRepository.enqueue(processedEvent);
+            inboxRepository.complete(event.eventId());
 
-            log.info("status=COMPLETED message=\"Processing finished\"");
+            log.info("status=COMPLETED message=\"Processing finished; result stored in transactional outbox\"");
         } finally {
             LoggingContext.clear();
         }

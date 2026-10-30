@@ -1,0 +1,7 @@
+target
+.git
+.idea
+.codex
+.m2-repository
+.m2-repository.zip
+*.log

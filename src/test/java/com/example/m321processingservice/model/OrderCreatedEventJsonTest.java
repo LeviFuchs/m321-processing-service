@@ -31,7 +31,7 @@ class OrderCreatedEventJsonTest {
                   "product": "Widget",
                   "quantity": 3,
                   "createdAt": "2026-09-18T10:00:00Z",
-                  "eventVersion": "1.0",
+                  "eventVersion": 1,
                   "customerReference": "ABC"
                 }
                 """;
@@ -44,5 +44,6 @@ class OrderCreatedEventJsonTest {
         assertThat(event.product()).isEqualTo("Widget");
         assertThat(event.quantity()).isEqualTo(3);
         assertThat(event.createdAt()).isEqualTo(Instant.parse("2026-09-18T10:00:00Z"));
+        assertThat(event.eventVersion()).isEqualTo(1);
     }
 }

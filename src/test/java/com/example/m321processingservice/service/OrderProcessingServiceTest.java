@@ -1,7 +1,7 @@
 package com.example.m321processingservice.service;
 
 import com.example.m321processingservice.config.ProcessingProperties;
-import com.example.m321processingservice.messaging.OrderProcessedPublisher;
+import com.example.m321processingservice.messaging.ProcessingOutboxRepository;
 import com.example.m321processingservice.model.OrderCreatedEvent;
 import com.example.m321processingservice.model.OrderProcessedEvent;
 import org.junit.jupiter.api.Test;
@@ -14,11 +14,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class OrderProcessingServiceTest {
 
     // timeMs=0 keeps the tests fast; the delay itself is only relevant for the live demo.
-    private final ProcessingProperties processingProperties = new ProcessingProperties(0, "processing-service");
+    private final ProcessingProperties processingProperties = new ProcessingProperties(
+            0, "processing-service", "FAIL-DEMO");
+
+    private OrderProcessingService service(
+            ProcessingInboxRepository inbox,
+            ProcessingOutboxRepository outbox) {
+        return new OrderProcessingService(inbox, outbox, processingProperties);
+    }
 
     private OrderCreatedEvent sampleOrderCreated() {
         return new OrderCreatedEvent(
@@ -28,49 +36,56 @@ class OrderProcessingServiceTest {
                 "Widget",
                 2,
                 Instant.parse("2026-09-18T10:00:00Z"),
-                "1.0"
+                1
         );
     }
 
     @Test
     void processesOrderCreatedAndPublishesOrderProcessed() {
-        OrderProcessedPublisher publisher = mock(OrderProcessedPublisher.class);
-        OrderProcessingService service = new OrderProcessingService(new IdempotencyStore(), publisher, processingProperties);
+        ProcessingInboxRepository inbox = mock(ProcessingInboxRepository.class);
+        ProcessingOutboxRepository outbox = mock(ProcessingOutboxRepository.class);
+        OrderProcessingService service = service(inbox, outbox);
         OrderCreatedEvent orderCreated = sampleOrderCreated();
+        when(inbox.tryStart(orderCreated)).thenReturn(true);
 
         service.process(orderCreated);
 
         ArgumentCaptor<OrderProcessedEvent> captor = ArgumentCaptor.forClass(OrderProcessedEvent.class);
-        verify(publisher, times(1)).publish(captor.capture());
+        verify(outbox, times(1)).enqueue(captor.capture());
         OrderProcessedEvent processed = captor.getValue();
 
         assertThat(processed.orderId()).isEqualTo(orderCreated.orderId());
         assertThat(processed.status()).isEqualTo(OrderProcessedEvent.STATUS_PROCESSED);
+        assertThat(processed.eventVersion()).isEqualTo(1);
     }
 
     @Test
     void correlationIdIsCarriedOverUnchanged() {
-        OrderProcessedPublisher publisher = mock(OrderProcessedPublisher.class);
-        OrderProcessingService service = new OrderProcessingService(new IdempotencyStore(), publisher, processingProperties);
+        ProcessingInboxRepository inbox = mock(ProcessingInboxRepository.class);
+        ProcessingOutboxRepository outbox = mock(ProcessingOutboxRepository.class);
+        OrderProcessingService service = service(inbox, outbox);
         OrderCreatedEvent orderCreated = sampleOrderCreated();
+        when(inbox.tryStart(orderCreated)).thenReturn(true);
 
         service.process(orderCreated);
 
         ArgumentCaptor<OrderProcessedEvent> captor = ArgumentCaptor.forClass(OrderProcessedEvent.class);
-        verify(publisher).publish(captor.capture());
+        verify(outbox).enqueue(captor.capture());
         assertThat(captor.getValue().correlationId()).isEqualTo(orderCreated.correlationId());
     }
 
     @Test
     void orderProcessedGetsANewEventIdDifferentFromOrderCreated() {
-        OrderProcessedPublisher publisher = mock(OrderProcessedPublisher.class);
-        OrderProcessingService service = new OrderProcessingService(new IdempotencyStore(), publisher, processingProperties);
+        ProcessingInboxRepository inbox = mock(ProcessingInboxRepository.class);
+        ProcessingOutboxRepository outbox = mock(ProcessingOutboxRepository.class);
+        OrderProcessingService service = service(inbox, outbox);
         OrderCreatedEvent orderCreated = sampleOrderCreated();
+        when(inbox.tryStart(orderCreated)).thenReturn(true);
 
         service.process(orderCreated);
 
         ArgumentCaptor<OrderProcessedEvent> captor = ArgumentCaptor.forClass(OrderProcessedEvent.class);
-        verify(publisher).publish(captor.capture());
+        verify(outbox).enqueue(captor.capture());
         OrderProcessedEvent processed = captor.getValue();
 
         assertThat(processed.eventId()).isNotEqualTo(orderCreated.eventId());
@@ -79,13 +94,15 @@ class OrderProcessingServiceTest {
 
     @Test
     void duplicateOrderCreatedEventIdIsIgnored() {
-        OrderProcessedPublisher publisher = mock(OrderProcessedPublisher.class);
-        OrderProcessingService service = new OrderProcessingService(new IdempotencyStore(), publisher, processingProperties);
+        ProcessingInboxRepository inbox = mock(ProcessingInboxRepository.class);
+        ProcessingOutboxRepository outbox = mock(ProcessingOutboxRepository.class);
+        OrderProcessingService service = service(inbox, outbox);
         OrderCreatedEvent orderCreated = sampleOrderCreated();
+        when(inbox.tryStart(orderCreated)).thenReturn(true, false);
 
         service.process(orderCreated);
         service.process(orderCreated); // simulates RabbitMQ redelivery of the same message
 
-        verify(publisher, times(1)).publish(org.mockito.ArgumentMatchers.any());
+        verify(outbox, times(1)).enqueue(org.mockito.ArgumentMatchers.any());
     }
 }

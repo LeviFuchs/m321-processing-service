@@ -44,15 +44,15 @@ Noah Order Service  --REST-->  (Order angenommen)
    |
    | publiziert OrderCreated
    v
-RabbitMQ (Exchange: order.events)
+RabbitMQ (Exchange: orders.events)
    |
-   | Queue: processing-service.order-created.queue
+   | Queue: orders.processing
    v
 Levi Processing Service   <-- dieses Repository
    |
    | publiziert OrderProcessed
    v
-RabbitMQ (Exchange: order.events)
+RabbitMQ (Exchange: orders.events)
    |
    v
 Noah Order Service (konsumiert OrderProcessed)
@@ -62,15 +62,15 @@ Noah Order Service (konsumiert OrderProcessed)
 
 | Zweck                          | Name                                          |
 |--------------------------------|------------------------------------------------|
-| Exchange (topic, durable)      | `order.events`                                 |
-| Routing Key `OrderCreated`     | `order.created`                                |
-| Routing Key `OrderProcessed`   | `order.processed`                              |
-| Queue (dieser Service, durable)| `processing-service.order-created.queue`       |
+| Exchange (topic, durable)      | `orders.events`                                |
+| Routing Key `OrderCreated`     | `order.created.v1`                             |
+| Routing Key `OrderProcessed`   | `order.processed.v1`                           |
+| Queue (dieser Service, durable)| `orders.processing`                            |
 
 Dieser Service **deklariert** den Exchange sowie seine eigene, durable Queue inkl. Binding auf
-den Routing Key `order.created` (siehe `config/RabbitMQConfig`). Die Queue, in die
+den Routing Key `order.created.v1` (siehe `config/RabbitMQConfig`). Die Queue, in die
 `OrderProcessed` läuft, gehört Noah und wird dort deklariert — dieser Service publiziert nur auf
-den Exchange mit dem Routing Key `order.processed`.
+den Exchange mit dem Routing Key `order.processed.v1`.
 
 Alle Namen sind über `app.messaging.*` in `application.properties` konfigurierbar.
 
@@ -84,7 +84,7 @@ Alle Namen sind über `app.messaging.*` in `application.properties` konfigurierb
   "product": "Widget",
   "quantity": 2,
   "createdAt": "2026-09-18T10:00:00Z",
-  "eventVersion": "1.0"
+  "eventVersion": 1
 }
 ```
 
@@ -99,7 +99,7 @@ DTO: `model/OrderCreatedEvent`.
   "orderId": "order-456",
   "processedAt": "2026-09-18T10:00:03Z",
   "status": "PROCESSED",
-  "eventVersion": "1.0"
+  "eventVersion": 1
 }
 ```
 
@@ -147,7 +147,7 @@ Siehe Test `OrderCreatedEventJsonTest`.
 ## Skalierung (Competing Consumers)
 
 Der Service ist zustandslos genug, um mehrfach gleichzeitig gegen dieselbe RabbitMQ-Queue zu
-laufen — RabbitMQ verteilt die Nachrichten der Queue `processing-service.order-created.queue`
+laufen — RabbitMQ verteilt die Nachrichten der Queue `orders.processing`
 per Round-Robin auf alle verbundenen Consumer-Instanzen (`@RabbitListener`, Spring AMQP
 Default-Verhalten). Keine Instanz geht davon aus, die einzige zu sein.
 
@@ -164,7 +164,7 @@ Beide verbinden sich mit derselben Queue; Nachrichten werden zwischen ihnen aufg
 
 Fällt dieser Service aus, bleibt Noahs Order-Annahme unberührt: Noah publiziert `OrderCreated`
 weiterhin in den Exchange, RabbitMQ hält die Nachrichten in der durable Queue
-`processing-service.order-created.queue` (Status `Ready` im RabbitMQ-Management-UI) vor, bis
+`orders.processing` (Status `Ready` im RabbitMQ-Management-UI) vor, bis
 dieser Service wieder verfügbar ist und sie nachträglich verarbeitet.
 
 **Live-Demo:**
@@ -173,7 +173,7 @@ dieser Service wieder verfügbar ist und sie nachträglich verarbeitet.
 2. Noahs Order Service starten.
 3. Diesen Processing Service **nicht** starten.
 4. Über Noah mehrere Bestellungen anlegen.
-5. Im RabbitMQ-Management-UI die Queue `processing-service.order-created.queue` prüfen —
+5. Im RabbitMQ-Management-UI die Queue `orders.processing` prüfen —
    Nachrichten stehen auf `Ready`.
 6. Diesen Processing Service starten (`./mvnw spring-boot:run`).
 7. Beobachten, wie die Queue leer läuft und pro Nachricht Log-Zeilen mit

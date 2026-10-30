@@ -1,23 +1,9 @@
 asyncapi: 3.0.0
 info:
-  title: Order Processing Events (LOCAL PLACEHOLDER)
+  title: M321 Order Processing Contracts
   version: 1.0.0
   description: >
-    THIS FILE IS NOT THE SOURCE OF TRUTH.
-
-    It is a local development copy, written from this repository (Levi /
-    Processing Service) because, at the time this file was created, no
-    shared-contracts repository and no `LEVI HANDOFF` section with concrete
-    exchange/queue/routing-key/schema names had been provided.
-
-    The authoritative contract is whatever Noah's Order Service /
-    the shared-contracts repository defines. Before relying on this file:
-      1. Replace it with the real shared AsyncAPI spec, or
-      2. Reconcile every name below (exchange, routing keys, queue, schema
-         fields) with the real contract, and update
-         src/main/resources/application.properties accordingly.
-
-    Do not invent further diverging names on top of this file.
+    Processing Service view of the authoritative Order Service AsyncAPI contract.
 
 defaultContentType: application/json
 
@@ -33,7 +19,7 @@ servers:
 
 channels:
   orderCreated:
-    address: order.created
+    address: order.created.v1
     description: Published by Noah's Order Service when a new order is accepted.
     messages:
       OrderCreated:
@@ -42,12 +28,12 @@ channels:
       amqp:
         is: routingKey
         exchange:
-          name: order.events
+          name: orders.events
           type: topic
           durable: true
 
   orderProcessed:
-    address: order.processed
+    address: order.processed.v1
     description: Published by this Processing Service after an order was processed.
     messages:
       OrderProcessed:
@@ -56,7 +42,7 @@ channels:
       amqp:
         is: routingKey
         exchange:
-          name: order.events
+          name: orders.events
           type: topic
           durable: true
 
@@ -68,7 +54,7 @@ operations:
     bindings:
       amqp:
         queue:
-          name: processing-service.order-created.queue
+          name: orders.processing
           durable: true
           exclusive: false
           autoDelete: false
@@ -77,6 +63,17 @@ operations:
     action: send
     channel:
       $ref: '#/channels/orderProcessed'
+
+x-reliability:
+  deliveryGuarantee: at-least-once
+  producer: transactional-outbox-with-publisher-confirms
+  consumer: transactional-inbox-with-persistent-event-id
+  retryAttempts: 3
+  deadLetterExchange: orders.dlx
+  deadLetterQueue: orders.processing.dlq
+  tracingHeaders:
+    - traceparent
+    - tracestate
 
 components:
   messages:
@@ -128,8 +125,8 @@ components:
           type: string
           format: date-time
         eventVersion:
-          type: string
-          example: "1.0"
+          type: integer
+          const: 1
 
     OrderProcessed:
       type: object
@@ -157,5 +154,5 @@ components:
           type: string
           example: PROCESSED
         eventVersion:
-          type: string
-          example: "1.0"
+          type: integer
+          const: 1

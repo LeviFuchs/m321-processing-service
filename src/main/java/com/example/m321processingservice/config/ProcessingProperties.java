@@ -8,6 +8,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "processing")
 public record ProcessingProperties(
         long timeMs,
-        String serviceName
+        String serviceName,
+        String failProduct
 ) {
 }

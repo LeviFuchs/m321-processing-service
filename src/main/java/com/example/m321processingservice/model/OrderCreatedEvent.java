@@ -20,6 +20,6 @@ public record OrderCreatedEvent(
         @JsonProperty("product") String product,
         @JsonProperty("quantity") Integer quantity,
         @JsonProperty("createdAt") Instant createdAt,
-        @JsonProperty("eventVersion") String eventVersion
+        @JsonProperty("eventVersion") int eventVersion
 ) {
 }
